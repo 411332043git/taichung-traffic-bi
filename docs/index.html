@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>臺中市 115 年 3 月份交通事故統計分析儀表板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+  /* Palette: asphalt ink, road-paper greys, centre-line yellow; teal = injured, red = fatal */
+  :root {
+    --ink: #18222d;
+    --ink-2: #2b3846;
+    --muted: #5b6672;
+    --bg: #eceee9;
+    --card: #fafaf7;
+    --line: #d6dad2;
+    --yellow: #f0b400;
+    --teal: #17708a;
+    --red: #c23b2e;
+    --radius: 6px;
+    --font: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", "Heiti TC", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--font); font-size: 15px; line-height: 1.65;
+  }
+  a { color: var(--teal); }
+  :focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+
+  /* Banner shown when ECharts or data.js fails to load */
+  .banner {
+    display: none; padding: 10px 16px; background: #fff3cd; color: #5a4300;
+    border-bottom: 1px solid #e6c85c; text-align: center; font-size: 14px;
+  }
+  .banner.show { display: block; }
+
+  /* Header: dark asphalt band with a dashed centre line along its bottom edge */
+  header { background: var(--ink); color: #fff; padding: 28px 16px 0; }
+  .wrap { max-width: 1240px; margin: 0 auto; }
+  h1 {
+    margin: 0 0 18px; font-weight: 900; line-height: 1.25;
+    font-size: clamp(24px, 4.2vw, 42px); letter-spacing: .02em;
+  }
+  .notes {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 28px;
+    margin: 0 0 24px; font-size: 14px; color: #cfd6dd;
+  }
+  .notes div { padding-left: 12px; border-left: 3px solid var(--yellow); }
+  .notes dt { color: #fff; font-weight: 700; }
+  .notes dd { margin: 0; }
+  .centerline {
+    height: 6px;
+    background: repeating-linear-gradient(90deg, var(--yellow) 0 36px, transparent 36px 60px);
+  }
+
+  /* Filter bar */
+  .filter {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(250,250,247,.96); backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line);
+  }
+  .filter .wrap { display: flex; align-items: center; gap: 12px; padding: 10px 16px; flex-wrap: wrap; }
+  .filter label { font-weight: 700; }
+  select {
+    font: inherit; padding: 8px 36px 8px 12px; min-width: 220px;
+    border: 1.5px solid var(--ink-2); border-radius: var(--radius); background: #fff; color: var(--ink);
+  }
+  .filter .hint { color: var(--muted); font-size: 13px; }
+
+  main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 8px; }
+
+  /* KPI cards */
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+  .kpi {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 20px 14px; border-top: 5px solid var(--ink);
+  }
+  .kpi.injured { border-top-color: var(--teal); }
+  .kpi.dead { border-top-color: var(--red); }
+  .kpi h2 { margin: 0; font-size: 15px; font-weight: 700; color: var(--muted); }
+  .kpi .num {
+    font-size: clamp(40px, 6vw, 64px); font-weight: 900; line-height: 1.1;
+    font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+  }
+  .kpi .num small { font-size: 18px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0; }
+  .kpi.injured .num { color: var(--teal); }
+  .kpi.dead .num { color: var(--red); }
+  .kpi .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* Chart grid */
+  .grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    grid-template-areas: "rank hour" "rank type" "daily daily";
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 18px; display: flex; flex-direction: column; min-width: 0;
+  }
+  .card.rank { grid-area: rank; } .card.hour { grid-area: hour; }
+  .card.type { grid-area: type; } .card.daily { grid-area: daily; }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 4px; }
+  .card h2 { margin: 0; font-size: 17px; font-weight: 700; }
+  .card .desc { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+  .chart { width: 100%; flex: 1 1 auto; min-height: 280px; }
+  .rank .chart { min-height: 700px; }
+  .daily .chart { min-height: 300px; }
+
+  .seg { display: inline-flex; border: 1.5px solid var(--ink-2); border-radius: var(--radius); overflow: hidden; flex: none; }
+  .seg button {
+    font: inherit; font-size: 13px; padding: 4px 12px; border: 0; background: #fff; color: var(--ink); cursor: pointer;
+  }
+  .seg button + button { border-left: 1.5px solid var(--ink-2); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+
+  .explain { margin: 6px 0 0; font-size: 13px; color: var(--ink-2); }
+  .explain.note { color: var(--muted); }
+
+  footer { max-width: 1240px; margin: 0 auto; padding: 20px 16px 36px; color: var(--muted); font-size: 13px; }
+  footer p { margin: 2px 0; }
+
+  @media (max-width: 860px) {
+    .notes { grid-template-columns: 1fr; gap: 8px; }
+    .kpis { grid-template-columns: 1fr; }
+    .grid { grid-template-columns: 1fr; grid-template-areas: "rank" "hour" "type" "daily"; }
+    .rank .chart { min-height: 640px; }
+    select { min-width: 0; flex: 1 1 200px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="banner" id="banner" role="status"></div>
+
+<header>
+  <div class="wrap">
+    <h1>臺中市 115 年 3 月份交通事故統計分析儀表板</h1>
+    <dl class="notes">
+      <div><dt>資料來源</dt><dd>臺中市政府警察局</dd></div>
+      <div><dt>資料期間</dt><dd>115年3月（2026/03/01 - 2026/03/31）</dd></div>
+      <div><dt>限制說明</dt><dd>資料源自警察局逐案細部登記，部分欄位為代碼；若事故型態為空值已標註為「未填列/空白」</dd></div>
+    </dl>
+  </div>
+  <div class="centerline" aria-hidden="true"></div>
+</header>
+
+<div class="filter">
+  <div class="wrap">
+    <label for="district">行政區</label>
+    <select id="district"></select>
+    <span class="hint" id="hint">選擇行政區後，指標與圖表會同步更新</span>
+  </div>
+</div>
+
+<main>
+  <section class="kpis" aria-label="關鍵指標">
+    <article class="kpi">
+      <h2>總事故件數</h2>
+      <div class="num"><span id="kpi-count">0</span><small>件</small></div>
+      <div class="sub" id="sub-count"></div>
+    </article>
+    <article class="kpi injured">
+      <h2>受傷人數</h2>
+      <div class="num"><span id="kpi-injured">0</span><small>人</small></div>
+      <div class="sub" id="sub-injured"></div>
+    </article>
+    <article class="kpi dead">
+      <h2>死亡人數</h2>
+      <div class="num"><span id="kpi-dead">0</span><small>人</small></div>
+      <div class="sub" id="sub-dead"></div>
+    </article>
+  </section>
+
+  <section class="grid" aria-label="圖表">
+    <article class="card rank">
+      <div class="card-head"><h2>各行政區傷亡人數排行</h2></div>
+      <p class="desc">傷亡人數 = 受傷 + 死亡，由高到低；選取行政區時以黃色標示。</p>
+      <div class="chart" id="c-rank" role="img" aria-label="各行政區傷亡人數橫向長條圖"></div>
+    </article>
+
+    <article class="card hour">
+      <div class="card-head">
+        <h2>24 小時事故時段分佈</h2>
+        <div class="seg" role="group" aria-label="圖表類型">
+          <button type="button" data-type="line" aria-pressed="true">折線圖</button>
+          <button type="button" data-type="bar" aria-pressed="false">長條圖</button>
+        </div>
+      </div>
+      <p class="desc" id="hour-desc"></p>
+      <div class="chart" id="c-hour" role="img" aria-label="0 至 23 時事故件數分佈"></div>
+    </article>
+
+    <article class="card type">
+      <div class="card-head"><h2>事故型態分佈</h2></div>
+      <p class="desc">前 8 大「事故類型及型態」代碼，其餘合併為「其他」。</p>
+      <div class="chart" id="c-type" role="img" aria-label="事故型態環形圖"></div>
+      <p class="explain" id="type-explain"></p>
+      <p class="explain note">代碼為警察局登記用的事故類型及型態編號，原始資料未附對照表，故此處直接顯示代碼；空值標註為「未填列/空白」。</p>
+    </article>
+
+    <article class="card daily">
+      <div class="card-head"><h2>3 月份每日事故趨勢</h2></div>
+      <p class="desc" id="daily-desc"></p>
+      <div class="chart" id="c-daily" role="img" aria-label="3 月 1 日至 31 日每日事故件數"></div>
+    </article>
+  </section>
+</main>
+
+<footer>
+  <p>資料來源：臺中市政府警察局 115年03月份交通事故資料</p>
+  <p>原始資料與處理程式：<a href="https://github.com/411332043git/taichung-traffic-bi" target="_blank" rel="noopener">GitHub 專案頁面</a></p>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/echarts/5.5.0/echarts.min.js"></script>
+<script src="data.js"></script>
+<script>
+(function () {
+  'use strict';
+  var banner = document.getElementById('banner');
+  var D = window.TRAFFIC_DATA;
+  var hasCharts = typeof window.echarts !== 'undefined';
+  var msgs = [];
+  if (!D) {
+    banner.textContent = '找不到 data.js，請確認 docs/data.js 與 index.html 在同一個資料夾。';
+    banner.classList.add('show');
+    return;
+  }
+  if (!hasCharts) {
+    banner.textContent = '圖表元件（ECharts）載入失敗，可能是目前沒有網路；指標數字仍可使用，連上網路後請重新整理頁面。';
+    banner.classList.add('show');
+  }
+
+  var ALL = D.meta.all;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var fmt = function (n) { return Number(n).toLocaleString('zh-TW'); };
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { district: ALL, hourType: 'line' };
+  var sel = $('district');
+
+  // ---- filter ----
+  var opt = document.createElement('option');
+  opt.value = ALL; opt.textContent = '全部行政區 (' + D.districts.length + '區)';
+  sel.appendChild(opt);
+  D.districts.forEach(function (d) {
+    var o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o);
+  });
+
+  var label = function (k) { return k === ALL ? '全市' : k; };
+
+  // ---- KPI ----
+  var shown = { count: 0, injured: 0, dead: 0 };
+  var raf = {};
+  function tween(key, to) {
+    var el = $('kpi-' + key);
+    cancelAnimationFrame(raf[key]);
+    if (reduce) { shown[key] = to; el.textContent = fmt(to); return; }
+    var from = shown[key], t0 = performance.now(), dur = 550;
+    (function step(t) {
+      var p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      shown[key] = Math.round(from + (to - from) * e);
+      el.textContent = fmt(shown[key]);
+      if (p < 1) raf[key] = requestAnimationFrame(step);
+    })(t0);
+  }
+  function pct(a, b) { return b ? (a / b * 100).toFixed(1) + '%' : '0%'; }
+  function updateKpi() {
+    var s = D.summary[state.district], t = D.summary[ALL];
+    tween('count', s.count); tween('injured', s.injured); tween('dead', s.dead);
+    var all = state.district === ALL;
+    $('sub-count').textContent = all ? '全市 ' + D.districts.length + ' 區合計' : '占全市 ' + pct(s.count, t.count);
+    $('sub-injured').textContent = all ? '平均每件 ' + (s.injured / s.count).toFixed(2) + ' 人受傷' : '占全市 ' + pct(s.injured, t.injured);
+    $('sub-dead').textContent = all ? '平均每 ' + Math.round(s.count / Math.max(s.dead, 1)) + ' 件有 1 人死亡' : '占全市 ' + pct(s.dead, t.dead);
+    $('hour-desc').textContent = label(state.district) + '各時段事故件數（0–23 時）';
+    $('daily-desc').textContent = label(state.district) + '每日事故件數（3/1–3/31），虛線為日均';
+  }
+
+  if (!hasCharts) {
+    sel.addEventListener('change', function () { state.district = sel.value; updateKpi(); });
+    updateKpi();
+    return;
+  }
+
+  // ---- charts ----
+  var C = { ink: '#18222d', muted: '#5b6672', line: '#d6dad2', teal: '#17708a', yellow: '#f0b400', red: '#c23b2e', card: '#fafaf7' };
+  var base = {
+    animation: !reduce, animationDuration: 600, animationDurationUpdate: 600,
+    textStyle: { fontFamily: '"Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif' }
+  };
+  var charts = {
+    rank: echarts.init($('c-rank')),
+    hour: echarts.init($('c-hour')),
+    type: echarts.init($('c-type')),
+    daily: echarts.init($('c-daily'))
+  };
+  var narrow = function () { return window.innerWidth < 600; };
+
+  // 1. ranking
+  var ranked = D.districts.slice().sort(function (a, b) {
+    var x = D.summary[a], y = D.summary[b];
+    return (y.injured + y.dead) - (x.injured + x.dead);
+  });
+  function rankData() {
+    return ranked.map(function (d) {
+      var s = D.summary[d], hit = state.district === d, none = state.district === ALL;
+      return {
+        name: d, value: s.injured + s.dead,
+        itemStyle: { color: hit ? C.yellow : C.teal, opacity: hit || none ? 1 : 0.35,
+                     borderColor: hit ? C.ink : 'transparent', borderWidth: hit ? 1.5 : 0 }
+      };
+    });
+  }
+  charts.rank.setOption(Object.assign({}, base, {
+    grid: { left: 8, right: 48, top: 6, bottom: 6, containLabel: true },
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: function (p) {
+      var s = D.summary[p[0].name];
+      return '<b>' + p[0].name + '</b><br>傷亡合計 ' + fmt(s.injured + s.dead) + ' 人<br>受傷 ' + fmt(s.injured) + ' 人 ／ 死亡 ' + s.dead + ' 人';
+    } },
+    xAxis: { type: 'value', splitLine: { lineStyle: { color: C.line } }, axisLabel: { color: C.muted } },
+    yAxis: { type: 'category', inverse: true, data: ranked, axisTick: { show: false },
+             axisLine: { lineStyle: { color: C.line } }, axisLabel: { color: C.ink, interval: 0 } },
+    series: [{ id: 'rank', type: 'bar', data: rankData(), barCategoryGap: '30%',
+               label: { show: true, position: 'right', color: C.ink, fontSize: 12, formatter: function (p) { return fmt(p.value); } } }]
+  }));
+
+  // 2. hourly
+  var hours = Array.from({ length: 24 }, function (_, i) { return i; });
+  function hourSeries(type) {
+    var s = {
+      id: 'hour', type: type, name: '事故件數', data: D.hourly[state.district],
+      universalTransition: { enabled: true }, itemStyle: { color: C.teal },
+      markPoint: { data: [{ type: 'max', name: '尖峰' }], symbolSize: 46, itemStyle: { color: C.yellow },
+                   label: { color: C.ink, fontWeight: 700, formatter: function (p) { return p.value; } } }
+    };
+    if (type === 'line') { s.smooth = true; s.symbolSize = 6; s.lineStyle = { width: 3, color: C.teal }; }
+    else { s.barCategoryGap = '25%'; }
+    return s;
+  }
+  charts.hour.setOption(Object.assign({}, base, {
+    grid: { left: 8, right: 16, top: 36, bottom: 8, containLabel: true },
+    tooltip: { trigger: 'axis', formatter: function (p) { return p[0].name + ':00–' + p[0].name + ':59<br>事故 ' + fmt(p[0].value) + ' 件'; } },
+    xAxis: { type: 'category', data: hours, name: '時', nameGap: 6, axisLabel: { color: C.muted, interval: 1 },
+             axisLine: { lineStyle: { color: C.line } } },
+    yAxis: { type: 'value', name: '件', splitLine: { lineStyle: { color: C.line } }, axisLabel: { color: C.muted } },
+    series: [hourSeries('line')]
+  }));
+  document.querySelectorAll('.seg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var type = b.getAttribute('data-type');
+      if (type === state.hourType) return;
+      state.hourType = type;
+      document.querySelectorAll('.seg button').forEach(function (x) {
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+      });
+      charts.hour.setOption({ series: [hourSeries(type)] }, { replaceMerge: ['series'] });
+    });
+  });
+
+  // 3. type donut
+  var typeColors = ['#17708a', '#3f8fd2', '#7b5ea7', '#d1782a', '#4f9d69', '#b84f7d', '#8a8f2a', '#2f4858'];
+  var typeNames = D.typeOrder.map(function (t) {
+    return t === '(空白)' ? '未填列/空白' : t === '其他' ? '其他' : '代碼 ' + t;
+  });
+  function typeData() {
+    var counts = D.types[state.district];
+    return typeNames.map(function (n, i) {
+      var c = n === '未填列/空白' ? '#9aa3ab' : n === '其他' ? '#c9cec6' : typeColors[i % typeColors.length];
+      return { name: n, value: counts[i], itemStyle: { color: c, borderColor: C.card, borderWidth: 2 } };
+    });
+  }
+  function typeLayout() {
+    return narrow()
+      ? { legend: { orient: 'horizontal', bottom: 0, left: 'center', top: 'auto', right: 'auto' }, series: [{ id: 'type', center: ['50%', '40%'], radius: ['38%', '62%'] }] }
+      : { legend: { orient: 'vertical', right: 8, top: 'middle', bottom: 'auto', left: 'auto' }, series: [{ id: 'type', center: ['36%', '50%'], radius: ['44%', '72%'] }] };
+  }
+  charts.type.setOption(Object.assign({}, base, {
+    tooltip: { trigger: 'item', formatter: '{b}<br>{c} 件（{d}%）' },
+    legend: { itemWidth: 12, itemHeight: 12, textStyle: { color: C.ink }, icon: 'circle' },
+    series: [{ id: 'type', type: 'pie', data: typeData(), label: { show: false }, labelLine: { show: false },
+               emphasis: { scale: true, scaleSize: 6 } }]
+  }));
+  charts.type.setOption(typeLayout());
+  function updateTypeText() {
+    var d = typeData().filter(function (x) { return x.name !== '其他'; });
+    var total = D.types[state.district].reduce(function (a, b) { return a + b; }, 0);
+    d.sort(function (a, b) { return b.value - a.value; });
+    var top = d[0];
+    $('type-explain').textContent = label(state.district) + '共 ' + fmt(total) + ' 件；最多的是「' + top.name + '」，' +
+      fmt(top.value) + ' 件（' + pct(top.value, total) + '）。';
+  }
+
+  // 4. daily
+  var dayLabels = D.days.map(function (d) { return Number(d.slice(5, 7)) + '/' + Number(d.slice(8)); });
+  charts.daily.setOption(Object.assign({}, base, {
+    grid: { left: 8, right: 20, top: 36, bottom: 8, containLabel: true },
+    tooltip: { trigger: 'axis', formatter: function (p) { return p[0].name + '<br>事故 ' + fmt(p[0].value) + ' 件'; } },
+    xAxis: { type: 'category', data: dayLabels, boundaryGap: false, axisLabel: { color: C.muted, interval: narrow() ? 4 : 1 },
+             axisLine: { lineStyle: { color: C.line } } },
+    yAxis: { type: 'value', name: '件', splitLine: { lineStyle: { color: C.line } }, axisLabel: { color: C.muted } },
+    series: [{
+      id: 'daily', type: 'line', name: '事故件數', data: D.daily[state.district], smooth: 0.25, symbol: 'circle', symbolSize: 5,
+      lineStyle: { width: 2.5, color: C.teal }, itemStyle: { color: C.teal },
+      areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(23,112,138,.38)' }, { offset: 1, color: 'rgba(23,112,138,.03)' }]) },
+      markLine: { symbol: 'none', silent: true, lineStyle: { color: C.red, type: 'dashed' },
+                  label: { formatter: '日均 {c}', color: C.red, position: 'insideEndTop' }, data: [{ type: 'average' }] },
+      markPoint: { data: [{ type: 'max', name: '單日最高' }], symbolSize: 46, itemStyle: { color: C.yellow },
+                   label: { color: C.ink, fontWeight: 700 } }
+    }]
+  }));
+
+  // ---- sync on district change (merge updates, no re-init) ----
+  function update() {
+    updateKpi();
+    charts.rank.setOption({ series: [{ id: 'rank', data: rankData() }] });
+    charts.hour.setOption({ series: [{ id: 'hour', data: D.hourly[state.district] }] });
+    charts.type.setOption({ series: [{ id: 'type', data: typeData() }] });
+    charts.daily.setOption({ series: [{ id: 'daily', data: D.daily[state.district] }] });
+    updateTypeText();
+  }
+  sel.addEventListener('change', function () { state.district = sel.value; update(); });
+  update();
+
+  // ---- resize ----
+  var lastNarrow = narrow();
+  var timer;
+  window.addEventListener('resize', function () {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      Object.keys(charts).forEach(function (k) { charts[k].resize(); });
+      if (narrow() !== lastNarrow) {
+        lastNarrow = narrow();
+        charts.type.setOption(typeLayout());
+        charts.daily.setOption({ xAxis: { axisLabel: { interval: lastNarrow ? 4 : 1 } } });
+      }
+    }, 120);
+  });
+})();
+</script>
+</body>
+</html>
